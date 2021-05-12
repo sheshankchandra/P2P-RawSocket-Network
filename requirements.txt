@@ -1,0 +1,18 @@
+# Dependencies for P2P File Sharing
+
+# Binary header parsing (replaces manual struct.pack/unpack formatting)
+construct>=2.10.68
+
+# Bitfield piece tracking (tracks which chunks a peer has)
+bitarray>=2.5.0
+
+# Terminal tables and progress bars
+rich>=12.0.0
+tqdm>=4.64.0
+colorama>=0.4.5
+
+# Packet inspection for the experimental sniffer script
+scapy>=2.4.5
+
+# Testing
+pytest>=7.1.2
