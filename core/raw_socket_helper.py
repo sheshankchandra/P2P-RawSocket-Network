@@ -45,3 +45,14 @@ def start_raw_packet_sniffer(host_ip: str = "127.0.0.1", count: int = 5):
         sniffer.close()
     except Exception as e:
         print(f"[Sniffer] Error: {e}")
+
+def parse_tcp_header(raw_data: bytes) -> Dict[str, Any]:
+    tcph = struct.unpack("!HHLLBBHHH", raw_data[:20])
+    return {
+        "src_port": tcph[0],
+        "dst_port": tcph[1],
+        "seq_num": tcph[2],
+        "ack_num": tcph[3],
+        "flags": str(tcph[5]),
+        "window": tcph[6],
+    }
