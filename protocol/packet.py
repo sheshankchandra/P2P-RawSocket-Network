@@ -20,3 +20,17 @@ class P2PPacket:
 
     def __repr__(self):
         return f"<P2PPacket type={self.msg_type:#04x} len={self.payload_len}>"
+
+class ConnectionClosedError(Exception):
+    pass
+
+def recv_exact(sock, num_bytes: int) -> bytes:
+    buffer = bytearray()
+    while len(buffer) < num_bytes:
+        chunk = sock.recv(num_bytes - len(buffer))
+        if not chunk:
+            if len(buffer) == 0:
+                raise ConnectionClosedError("Remote peer closed the connection.")
+            raise ConnectionClosedError(f"Connection dropped mid-stream (needed {num_bytes}, got {len(buffer)})")
+        buffer.extend(chunk)
+    return bytes(buffer)
