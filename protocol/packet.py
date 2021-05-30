@@ -12,7 +12,8 @@ class P2PPacket:
         self.seq_num = seq_num
         self.payload = payload
         self.payload_len = len(payload)
-        self.checksum = 0
+        import zlib
+        self.checksum = zlib.crc32(payload) & 0xFFFFFFFF
 
     def to_bytes(self) -> bytes:
         header = struct.pack(HEADER_FORMAT, self.magic, self.version, self.msg_type, self.flags, self.seq_num, self.payload_len, self.checksum)
@@ -34,3 +35,6 @@ def recv_exact(sock, num_bytes: int) -> bytes:
             raise ConnectionClosedError(f"Connection dropped mid-stream (needed {num_bytes}, got {len(buffer)})")
         buffer.extend(chunk)
     return bytes(buffer)
+
+class InvalidPacketError(Exception):
+    pass
