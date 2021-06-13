@@ -1,3 +1,30 @@
+try:
+    from bitarray import bitarray
+    USE_BITARRAY = True
+except ImportError:
+    USE_BITARRAY = False
+
+class FileBitfield:
+    def __init__(self, num_chunks: int, initial_value: bool = False):
+        self.num_chunks = num_chunks
+        if USE_BITARRAY:
+            self.bits = bitarray(num_chunks)
+            self.bits.setall(1 if initial_value else 0)
+        else:
+            self.bits = [1 if initial_value else 0] * num_chunks
+
+    def set_piece(self, index: int, value: bool = True):
+        self.bits[index] = 1 if value else 0
+
+    def has_piece(self, index: int) -> bool:
+        return bool(self.bits[index])
+
+    def is_complete(self) -> bool:
+        return self.bits.all() if USE_BITARRAY else all(self.bits)
+
+    def count_completed(self) -> int:
+        return self.bits.count(1) if USE_BITARRAY else sum(self.bits)
+
 # File chunking and SHA-256 digests
 
 import hashlib
