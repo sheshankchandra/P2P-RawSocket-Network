@@ -152,3 +152,29 @@ def read_chunk_from_file(filepath: str, chunk_index: int, chunk_size: int = DEFA
         return f.read(chunk_size)
 
 
+def verify_chunk(chunk_data: bytes, expected_hash: str) -> bool:
+    return compute_sha256(chunk_data) == expected_hash
+
+
+def reassemble_file(
+    output_filepath: str,
+    chunks: Dict[int, bytes],
+    manifest: FileManifest,
+) -> bool:
+    # Writes all chunks sequentially into the output file and checks the final file hash
+    os.makedirs(os.path.dirname(os.path.abspath(output_filepath)), exist_ok=True)
+
+    with open(output_filepath, "wb") as f:
+        for idx in range(manifest.chunk_count):
+            if idx not in chunks:
+                raise ValueError(f"Missing chunk {idx} during reassembly")
+            f.write(chunks[idx])
+
+    # Re-verify full file hash
+    computed_file_id = create_manifest(output_filepath, manifest.chunk_size).file_id
+    if computed_file_id != manifest.file_id:
+        raise ValueError(
+            f"File integrity check failed: expected {manifest.file_id}, got {computed_file_id}"
+        )
+
+    return True
