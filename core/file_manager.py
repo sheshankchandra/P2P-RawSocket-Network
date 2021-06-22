@@ -15,3 +15,27 @@ class FileManager:
         os.makedirs(self.download_dir, exist_ok=True)
         self.files = {}
         self.lock = threading.Lock()
+
+    def add_file(self, filepath: str) -> FileManifest:
+        if not os.path.isfile(filepath):
+            raise FileNotFoundError(f"File not found: {filepath}")
+        manifest = create_manifest(filepath, self.chunk_size)
+        bitfield = FileBitfield(manifest.chunk_count, initial_value=True)
+        with self.lock:
+            self.files[manifest.file_id] = (filepath, manifest, bitfield)
+        return manifest
+
+    def refresh_storage(self) -> List[FileManifest]:
+        added = []
+        with self.lock:
+            for fname in os.listdir(self.storage_dir):
+                fpath = os.path.join(self.storage_dir, fname)
+                if os.path.isfile(fpath):
+                    try:
+                        manifest = create_manifest(fpath, self.chunk_size)
+                        bitfield = FileBitfield(manifest.chunk_count, initial_value=True)
+                        self.files[manifest.file_id] = (fpath, manifest, bitfield)
+                        added.append(manifest)
+                    except Exception:
+                        pass
+        return added
