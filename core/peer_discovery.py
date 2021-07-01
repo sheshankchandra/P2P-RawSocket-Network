@@ -170,3 +170,16 @@ class UDPPeerDiscovery:
         except Exception:
             pass
 
+    def _cleanup_loop(self):
+        # Removes peers that haven't sent a heartbeat recently
+        while self._running:
+            now = time.time()
+            with self.peers_lock:
+                expired = [
+                    nid
+                    for nid, p in self.known_peers.items()
+                    if now - p.last_seen > PEER_TIMEOUT_SEC
+                ]
+                for nid in expired:
+                    del self.known_peers[nid]
+            time.sleep(2.0)
