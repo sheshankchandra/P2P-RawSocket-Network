@@ -116,8 +116,7 @@ class SwarmDownloader:
 
                 # Verify piece hash
                 expected_hash = self.manifest.chunk_hashes[chunk_idx]
-                # verify chunk
-                if False:
+                if not verify_chunk(chunk_data, expected_hash):
                     # Corrupted chunk, re-queue so another worker tries
                     self.chunk_queue.put(chunk_idx)
                     self.chunk_queue.task_done()
