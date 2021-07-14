@@ -169,3 +169,83 @@ class PeerNode:
                 break
 
     def _handle_client_connection(self, conn: socket.socket, addr: tuple):
+        """Handles sequential packet exchanges over an established peer socket."""
+        conn.settimeout(15.0)
+        try:
+            while self._running:
+                try:
+                    packet = read_packet(conn)
+                except (ConnectionClosedError, TimeoutError, socket.timeout):
+                    break
+                except InvalidPacketError as e:
+                    self.log(f"Protocol error from {addr}: {e}")
+                    break
+
+                # Dispatch based on OpCode
+                if packet.msg_type == OP_HANDSHAKE:
+                    info = decode_handshake(packet.payload)
+                    resp = P2PPacket(
+                        msg_type=OP_HANDSHAKE_ACK,
+                        payload=encode_handshake(self.node_id, self.tcp_port),
+                        seq_num=packet.seq_num,
+                    )
+                    send_packet(conn, resp)
+
+                elif packet.msg_type == OP_PING:
+                    resp = P2PPacket(msg_type=OP_PONG, seq_num=packet.seq_num)
+                    send_packet(conn, resp)
+
+                elif packet.msg_type == OP_FILE_LIST_REQ:
+                    files = self.file_manager.list_shared_files()
+                    resp = P2PPacket(
+                        msg_type=OP_FILE_LIST_RESP,
+                        payload=encode_file_list(files),
+                        seq_num=packet.seq_num,
+                    )
+                    send_packet(conn, resp)
+
+                elif packet.msg_type == OP_FILE_META_REQ:
+                    file_id = decode_file_meta_req(packet.payload)
+                    manifest = self.file_manager.get_manifest(file_id)
+                    if manifest:
+                        resp = P2PPacket(
+                            msg_type=OP_FILE_META_RESP,
+                            payload=encode_file_meta_resp(manifest.to_dict()),
+                            seq_num=packet.seq_num,
+                        )
+                    else:
+                        resp = P2PPacket(
+                            msg_type=OP_ERROR,
+                            payload=encode_json_payload({"error": "File not found"}),
+                            seq_num=packet.seq_num,
+                        )
+                    send_packet(conn, resp)
+
+                elif packet.msg_type == OP_CHUNK_REQ:
+                    file_id, chunk_index = decode_chunk_req(packet.payload)
+                    chunk_data = self.file_manager.get_chunk(file_id, chunk_index)
+                    if chunk_data is not None:
+                        resp = P2PPacket(
+                            msg_type=OP_CHUNK_RESP,
+                            payload=encode_chunk_resp(file_id, chunk_index, chunk_data),
+                            seq_num=packet.seq_num,
+                        )
+                    else:
+                        resp = P2PPacket(
+                            msg_type=OP_ERROR,
+                            payload=encode_json_payload({"error": f"Chunk {chunk_index} not found"}),
+                            seq_num=packet.seq_num,
+                        )
+                    send_packet(conn, resp)
+
+        except Exception as e:
+            self.log(f"Connection handler exception with {addr}: {e}")
+        finally:
+            with self._connections_lock:
+                if conn in self._active_connections:
+                    self._active_connections.remove(conn)
+            try:
+                conn.close()
+            except Exception:
+                pass
+
