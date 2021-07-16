@@ -249,3 +249,102 @@ class PeerNode:
             except Exception:
                 pass
 
+    # --- Client Interaction Methods ---
+
+    def query_peer_files(self, peer_ip: str, peer_port: int) -> List[Dict[str, Any]]:
+        """Queries a peer node for its list of available files."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(SOCKET_TIMEOUT)
+        try:
+            s.connect((peer_ip, peer_port))
+            # Send file list request
+            req = P2PPacket(msg_type=OP_FILE_LIST_REQ, seq_num=1)
+            send_packet(s, req)
+
+            resp = read_packet(s)
+            if resp.msg_type == OP_FILE_LIST_RESP:
+                return decode_file_list(resp.payload)
+            return []
+        finally:
+            s.close()
+
+    def fetch_manifest(self, peer_ip: str, peer_port: int, file_id: str) -> Optional[FileManifest]:
+        """Fetches file metadata manifest and piece hashes from a peer."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(SOCKET_TIMEOUT)
+        try:
+            s.connect((peer_ip, peer_port))
+            req = P2PPacket(
+                msg_type=OP_FILE_META_REQ,
+                payload=encode_file_meta_req(file_id),
+                seq_num=2,
+            )
+            send_packet(s, req)
+
+            resp = read_packet(s)
+            if resp.msg_type == OP_FILE_META_RESP:
+                data = decode_file_meta_resp(resp.payload)
+                return FileManifest.from_dict(data)
+            return None
+        finally:
+            s.close()
+
+    def download_file(
+        self,
+        file_id: str,
+        custom_save_name: Optional[str] = None,
+        progress_cb: Optional[Callable[[int, int, float], None]] = None,
+    ) -> str:
+        """
+        Orchestrates full swarm download:
+        1. Identifies all known peers seeding the file
+        2. Retrieves manifest
+        3. Downloads chunks across multiple peers in parallel
+        4. Reassembles and verifies integrity
+        5. Registers newly downloaded file into local storage to seed it!
+        """
+        active_peers = self.discovery.get_active_peers() if self.discovery else []
+        if not active_peers:
+            raise RuntimeError("No active peers found in network.")
+
+        # Find peers that host this file
+        seeders: List[tuple[str, int]] = []
+        target_manifest = None
+
+        for p in active_peers:
+            try:
+                files = self.query_peer_files(p.ip, p.tcp_port)
+                for f in files:
+                    if f["file_id"] == file_id:
+                        seeders.append((p.ip, p.tcp_port))
+                        if target_manifest is None:
+                            target_manifest = self.fetch_manifest(p.ip, p.tcp_port, file_id)
+                        break
+            except Exception:
+                continue
+
+        if not seeders or target_manifest is None:
+            raise RuntimeError(f"File ID {file_id} could not be located on any active peer.")
+
+        save_name = custom_save_name or target_manifest.file_name
+        dest_path = os.path.join(self.file_manager.download_dir, save_name)
+
+        self.log(
+            f"Starting swarm download of '{target_manifest.file_name}' ({target_manifest.file_size} bytes) "
+            f"from {len(seeders)} seeders across {target_manifest.chunk_count} chunks..."
+        )
+
+        downloader = SwarmDownloader(
+            manifest=target_manifest,
+            output_filepath=dest_path,
+            peer_addresses=seeders,
+            max_workers=4,
+            progress_cb=progress_cb,
+        )
+
+        downloader.start_download()
+
+        # Seed the newly completed file
+        self.file_manager.mark_download_complete(file_id, dest_path, target_manifest)
+        self.log(f"Download complete! File saved and verified: {dest_path}")
+        return dest_path
