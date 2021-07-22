@@ -1,2 +1,6 @@
-"""P2P UI Package"""
+"""
+P2P-RawSocket-Network UI Package
+"""
+
 from .cli import CLIApp
+from .gui import PeerNodeGUI
